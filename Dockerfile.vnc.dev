@@ -1,0 +1,33 @@
+# docker build -t clion-vnc:0.1 ./
+# docker run -d -p 5901:5901 -p 6901:6901 --user $(id -u):$(id -g) -e VNC_RESOLUTION=1920x1080 -v /workspace:/workspace clion-vnc:0.1
+# more document: https://github.com/ConSol/docker-headless-vnc-container
+FROM consol/ubuntu-xfce-vnc:1.4.0
+ 
+# Switch to root user to install additional software
+USER 0
+ 
+ENV CLION_VERSION=2020.3
+ 
+RUN cd /tmp \
+    && wget https://download-cf.jetbrains.com/cpp/CLion-${CLION_VERSION}.tar.gz \
+    && tar xvzf CLion-*.tar.gz -C /opt/ \
+    && rm ./*.tar.gz \
+    && mkdir -p ~/Desktop \
+    && cd ~/Desktop \
+    && ln -s /opt/clion-${CLION_VERSION}/bin/clion.sh clion.sh
+ 
+RUN apt-get update -yqq \
+    && apt-get install -yqq gcc-4.9 g++-4.9 \
+    && ln -s /usr/bin/g++-4.9 /usr/bin/g++ \
+    && ln -s /usr/bin/gcc-4.9 /usr/bin/gcc \
+    && apt-get clean \
+    && rm -rf \
+        /var/lib/apt/lists/* \
+        /tmp/* \
+        /var/tmp/* \
+        /usr/share/man \
+        /usr/share/doc \
+        /usr/share/doc-base
+ 
+## switch back to default user
+USER 1000
