@@ -1,5 +1,31 @@
 # 算法
 
+## 快速排序
+
+## 堆排序
+
+```cpp
+void maxHeapify(vector<int>& a, int i, int heapSize) {
+    int l = i * 2 + 1, r = i * 2 + 2, largest = i;
+    if (l < heapSize && a[l] > a[largest]) {
+        largest = l;
+    } 
+    if (r < heapSize && a[r] > a[largest]) {
+        largest = r;
+    }
+    if (largest != i) {
+        swap(a[i], a[largest]);
+        maxHeapify(a, largest, heapSize);
+    }
+}
+
+void buildMaxHeap(vector<int>& a, int heapSize) {
+    for (int i = heapSize / 2; i >= 0; --i) {
+        maxHeapify(a, i, heapSize);
+    } 
+}
+```
+
 ## KMP算法
 
 KMP算法是一种字符串匹配算法，可以在 O(n+m) 的时间复杂度内实现两个字符串的匹配

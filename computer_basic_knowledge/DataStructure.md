@@ -96,6 +96,11 @@ empty() -- 返回队列是否为空。
 
 在完全二叉树中，除了最底层节点可能没填满外，其余每层节点数都达到最大值，并且最下面一层的节点都集中在该层最左边的若干位置
 
+堆是具有以下性质的完全二叉树：每个结点的值都大于或等于其左右孩子结点的值，称为大顶堆；或者每个结点的值都小于或等于其左右孩子结点的值，称为小顶堆
+
+大顶堆：arr[i] >= arr[2i+1] && arr[i] >= arr[2i+2]  
+小顶堆：arr[i] <= arr[2i+1] && arr[i] <= arr[2i+2]  
+
 ### 二叉搜索树
 
 - 若它的左子树不空，则左子树上所有结点的值均小于它的根结点的值；
@@ -121,6 +126,31 @@ empty() -- 返回队列是否为空。
     可以用递归, 也可以迭代(用栈实现)
   - 前序遍历(中左右)
   - 中序遍历(左中右)
+  
+    ```cpp
+    vector<int> inorderTraversal(TreeNode* root) {
+        vector<int> results;
+        stack<TreeNode*> s;
+        // 栈保存遍历到的节点
+
+        while (root != nullptr || !s.empty())
+        {
+            while (root != nullptr)
+            {
+                s.emplace(root);
+                root = root->left;
+            }
+
+            root = s.top();
+            s.pop();
+            results.emplace_back(root->val);
+            root = root->right;
+        }
+
+        return results;
+    }
+    ```
+
   - 后序遍历(左右中)
 - 广度优先遍历
 
@@ -154,3 +184,4 @@ INT_MIN -2147483648
 ## Reference
 
 <https://mp.weixin.qq.com/s/X7R55wSENyY62le0Fiawsg>
+<https://www.cnblogs.com/chengxiao/p/6129630.html>
