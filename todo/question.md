@@ -1,15 +1,165 @@
 # question
 
+## new/malloc原理
 
-函数参数传递原理
-new/malloc原理
+## mutex原理
 
-mutex原理
-coredump排查
-性能调优
+## clickhouse
 
-clickhouse原理
+## 函数参数传递机制
+函数参数传递机制问题在本质上是调用函数（过程）和被调用函数（过程）在调用发生时进行通信的方法问题
 
+### 值传递（passl-by-value）
+被调函数的形式参数作为被调函数的局部变量处理，即在堆栈中开辟了内存空间以存放由主调函数放进来的实参的值，从而成为了实参的一个副本。
+值传递的特点是被调函数对形式参数的任何操作都是作为局部变量进行，不会影响主调函数的实参变量的值。
+
+函数返回值一般放在寄存器中，这主要是为了支持中断；如果放在堆栈中有可能因为中断而被覆盖
+参数是从右向左进栈的
+
+### 引用传递(pass-by-reference)
+被调函数的形式参数虽然也作为局部变量在堆栈中开辟了内存空间，但是这时存放的是由主调函数放进来的实参变量的地址。
+被调函数对形参的任何操作都被处理成间接寻址，即通过堆栈中存放的地址访问主调函数中的实参变量。正因为如此，被调函数对形参做的任何操作都影响了主调函数中的实参变量。
+
+## cgroup
+CGroup 是 Control Groups 的缩写，是 Linux 内核提供的一种可以限制、记录、隔离进程组 (process groups) 所使用的物力资源 (如 cpu memory i/o 等等) 的机制
+
+## IO
+缓存IO
+
+在 Linux 的缓存 I/O 机制中，操作系统会将 I/O 的数据缓存在文件系统的页缓存（ page cache ）中，也就是说，数据会先被拷贝到操作系统内核的缓冲区中，然后才会从操作系统内核的缓冲区拷贝到应用程序的地址空间
+
+当一个read操作发生时，它会经历两个阶段：
+1. 等待数据准备 (Waiting for the data to be ready)
+2. 将数据从内核拷贝到进程中 (Copying the data from the kernel to the process)
+
+### 阻塞 I/O（blocking IO）
+两个阶段进程都是阻塞的
+### 非阻塞 I/O（nonblocking IO）
+当用户进程发出read操作时，如果kernel中的数据还没有准备好，那么它并不会block用户进程，而是立刻返回一个error
+
+用户进程需要不断的主动询问kernel数据好了没有
+### I/O 多路复用（IO multiplexing）
+它的基本原理就是select，poll，epoll这个function会不断的轮询所负责的所有socket，当某个socket有数据到达了，就通知用户进程
+一个进程能同时等待多个文件描述符，而这些文件描述符（套接字描述符）其中的任意一个进入读就绪状态，select()函数就可以返回
+
+select/epoll的优势并不是对于单个连接能处理得更快，而是在于能处理更多的连接
+对于每一个socket，一般都设置成为non-blocking，但是，如上图所示，整个用户的process其实是一直被block的。只不过process是被select这个函数block，而不是被socket IO给block
+
+select，poll，epoll本质上都是同步I/O，因为他们都需要在读写事件就绪后自己负责进行读写
+#### select
+select目前几乎在所有的平台上支持
+select的缺点在于单个进程能够监视的文件描述符的数量存在最大限制，在Linux上一般为1024
+
+select 函数监视的文件描述符分3类，分别是writefds、readfds、和exceptfds。调用后select函数会阻塞，直到有描述副就绪（有数据 可读、可写、或者有except），或者超时（timeout指定等待时间，如果立即返回设为null即可），函数返回。当select函数返回后，可以 通过遍历fdset，来找到就绪的描述符
+
+#### poll
+pollfd并没有最大数量限制（但是数量过大后性能也是会下降）。 和select函数一样，poll返回后，需要轮询pollfd来获取就绪的描述符
+
+#### epoll
+在select/poll中，进程只有在调用一定的方法后，内核才对所有监视的文件描述符进行扫描，而epoll事先通过epoll_ctl()来注册一个文件描述符，一旦基于某个文件描述符就绪时，内核会采用类似callback的回调机制，当进程调用epoll_wait() 时便得到通知
+
+epoll的优点主要是一下几个方面：
+1. 监视的描述符数量不受限制，它所支持的FD上限是最大可以打开文件的数目，这个数字一般远大于2048,举个例子,在1GB内存的机器上大约是10万左 右，具体数目可以cat /proc/sys/fs/file-max察看,一般来说这个数目和系统内存关系很大。select的最大缺点就是进程打开的fd是有数量限制的
+
+2. IO的效率不会随着监视fd的数量的增长而下降。epoll不同于select和poll轮询的方式，而是通过每个fd定义的回调函数来实现的。只有就绪的fd才会执行回调函数。
+如果没有大量的idle -connection或者dead-connection，epoll的效率并不会比select/poll高很多，但是当遇到大量的idle- connection，就会发现epoll的效率大大高于select/poll。
+
+### 异步 I/O（asynchronous IO）
+用户进程发起read操作之后，立刻就可以开始去做其它的事。而另一方面，从kernel的角度，当它受到一个asynchronous read之后，首先它会立刻返回，所以不会对用户进程产生任何block。然后，kernel会等待数据准备完成，然后将数据拷贝到用户内存，当这一切都完成之后，kernel会给用户进程发送一个signal，告诉它read操作完成了
+
+## cpu异常排查
+### pstack
+可以显示指定进程每个线程的堆栈快照，便于排查程序异常和性能评估, 使用gdb实现的
+
+debug symbols 的程序才可以 pstack，否则将看不到调用栈
+
+### strace
+strace常用来跟踪进程执行时的系统调用和所接收的信号
+
+在Linux世界，进程不能直接访问硬件设备，当进程需要访问硬件设备(比如读取磁盘文件，接收网络数据等等)时，必须由用户态模式切换至内核态模式，通过系统调用访问硬件设备
+
+strace可以跟踪到一个进程产生的系统调用,包括参数，返回值，执行消耗的时间
+
+## 进程crash排查
+
+### 设置core文件大小
+1. 列出所有资源的限制： ulimit -a
+2. 查看core file size： ulimit -c
+3. 设置core文件大小： ulimit -c fileSize
+4. 设置core文件大小不受限制: ulimit -c unlimited 
+
+### core文件的名称与路径配置
+默认生成路径：输入可执行文件运行命令的同一路径下
+默认生成名字：默认命名为core。新的core文件会覆盖旧的core文件
+
+echo "/corefile/core-%e-%p-%t" > /proc/sys/kernel/core_pattern
+可以将core文件统一生成到/corefile目录下，产生的文件名为core-命令名-pid-时间戳
+参数列表:
+```shell
+%p - insert pid into filename 添加pid(进程id)
+%u - insert current uid into filename 添加当前uid(用户id)
+%g - insert current gid into filename 添加当前gid(用户组id)
+%s - insert signal that caused the coredump into the filename 添加导致产生core的信号
+%t - insert UNIX time that the coredump occurred into filename 添加core文件生成时的unix时间
+%h - insert hostname where the coredump happened into filename 添加主机名
+%e - insert coredumping executable name into filename 添加导致产生core的命令名
+```
+### gdb debug core文件
+前提是在gcc编译时加入-g选项
+
+gdb exec_file core_file
+
+## 进程间通信(IPC)
+1. 管道 pipe
+管道的实质是一个内核缓冲区，进程以先进先出的方式从缓冲区存取数据
+2. 有名管道 FIFO
+有名管道不同于匿名管道之处在于它提供了一个路径名与之关联
+通过有名管道不相关的进程也能交换数据
+有名管道的名字存在于文件系统中，内容存放在内存中
+3. 信号 signal
+信号可以在任何时候发给某一进程，而无需知道该进程的状态
+如果该进程当前并未处于执行状态，则该信号就有内核保存起来，知道该进程回复执行并传递给它为止
+如果一个信号被进程设置为阻塞，则该信号的传递被延迟，直到其阻塞被取消是才被传递给进程
+4. 消息队列
+消息队列是存放在内核中的消息链表，每个消息队列由消息队列标识符表示
+只有在内核重启(即，操作系统重启)或者显示地删除一个消息队列时，该消息队列才会被真正的删除
+目前主要有两种类型的消息队列：POSIX消息队列以及System V消息队列
+5. 共享内存
+内核专门留出了一块内存区，可以由需要访问的进程将其映射到自己的私有地址空间。进程就可以直接读写这一块内存而不需要进行数据的拷贝
+需要依靠某种同步机制（如信号量）来达到进程间的同步及互斥
+6. 信号量 semaphore
+信号量的意图在于进程间同步
+
+信号量是非负整型变量
+当该整数值为零时，所有试图通过它的线程都将处于等待状态。在信号量上我们定义两种操作： Wait（等待） 和 Release（释放
+当一个线程调用Wait操作时，它要么得到资源然后将信号量减一，要么一直等下去（指放入阻塞队列），直到信号量大于等于一时
+Release（释放）实际上是在信号量上执行加操作，对应于车辆离开停车场，该操作之所以叫做“释放”是因为释放了由信号量守护的资源
+7. 套接字 socket
+套接字是支持TCP/IP的网络通信的基本操作单元，可以看做是不同主机之间的进程进行双向通信的端点，简单的说就是通信的两方的一种约定，用套接字中的相关函数来完成通信过程
+
+套接字的域
+它指定套接字通信中使用的网络介质，最常见的套接字域有两种：
+一是AF_INET，它指的是Internet网络
+另一个域AF_UNIX，表示UNIX文件系统
+
+套接字的端口号
+端口是一个信息缓冲区，用于保留Socket中的输入/输出信息，端口号是一个16位无符号整数，范围是0-65535
+
+套接字协议类型
+一是流套接字，流套接字在域中通过TCP/IP连接实现，同时也是AF_UNIX中常用的套接字类型
+二个是数据报套接字，它不需要建立连接和维持一个连接，它们在域中通常是通过UDP/IP协议实现的
+三是原始套接字，原始套接字允许对较低层次的协议直接访问，比如IP、 ICMP协议，它常用于检验新的协议实现，或者访问现有服务中配置的新设备
+
+## MESI
+允许缓存间同步数据, 减少了对内存的操作
+1. 已修改Modified (M)
+缓存行是脏的（dirty），与主存的值不同。如果别的CPU内核要读主存这块数据，该缓存行必须回写到主存，状态变为共享(S).
+2. 独占Exclusive (E)
+缓存行只在当前缓存中，但是干净的（clean）--缓存数据同于主存数据。当别的缓存读取它时，状态变为共享；当前写数据时，变为已修改状态。
+3. 共享Shared (S)
+缓存行也存在于其它缓存中且是干净的。缓存行可以在任意时刻抛弃。
+4. 无效Invalid (I)
+缓存行是无效的
 
 ## es的索引,mapping
 Mapping是为文档属性动态生成的映射
@@ -49,5 +199,3 @@ Mapping是为文档属性动态生成的映射
 有n棵子树的节点含有n个关键字（也有认为是n-1个关键字）。
 所有的关键字全部存储在叶子节点上，且叶子节点本身根据关键字自小而大顺序连接。
 非叶子节点可以看成索引部分，节点中仅含有其子树（根节点）中的最大（或最小）关键字。
-
-跳表
