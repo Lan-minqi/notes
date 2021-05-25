@@ -48,17 +48,77 @@ Procella的功能:
 
 ## 2. ARCHITECTURE
 
-google基础设施特点
+### 2.1 google基础设施特点
 
 1. Disaggregated storage(分解存储)
   - 数据不可变, 文件能打开并追加, 但不能修改已有内容. 一旦文件完成(finalized), 将不能做任何修改
-  - 元数据操作如展示文件列表、打开文件会明显比本地文件系统高, 因为这些操作会触发到元数据服务器的RPC调用
+  - 元数据操作如展示文件列表、打开文件会明显比本地文件系统高, 因为这些操作会触发到元数据服务器的RPC(Remote Procedure Call, 远程过程调用)
   - 无本地存储, 所有持久化数据都在远端, 任何读写操作都要通过RPC实现
 2. 共享计算资源
   - 垂直扩展有挑战. 相比跑几个大任务, 跑很多小任务能提高总体利用率
   - 经常有机器因为各种原因挂掉, 任务需要快速恢复, 小任务容易做到快速恢复
   - 机器配置 资源使用参差,使得任务性能不可预测. 运行在此调度设施上的分布式系统需要配备复杂的处理任务异常的策略, 例如随机任务失败、间歇性任务被驱逐而不可用
-3. 
+
+### 2.2 procella的组成
+
+#### 2.2.1 Data Storage
+
+procella的数据逻辑上按表组织, 所有持久化数据保存在分布式文件系统Colossus中, 这使得计算和存储解耦, 处理数据的服务可以自由扩展, 无论底下的数据量是多少.
+
+同一份数据可以被多个procella实例使用
+
+#### 2.2.2 Metadata Storage
+
+procella不使用B树二级索引, 而使用`zone maps, bitmaps, bloom filters, partition and sort keys`等轻量的二级结构
+
+metadata server在query planning阶段提供这些结构信息
+
+这些二级结构一部分由registration server在文件注册阶段收集, 一部分由data servers在query evaluation阶段lazy收集
+
+#### 2.2.3 Table management
+
+表管理通过标准DDL(Data Definition Language)命令实现, 这些命令被发送到RgS(registration
+server)
+
+用户能指定`column names, data types, partitioning
+and sorting information, constraints, data ingestion method
+(batch or realtime)`等选项以保证最佳的表布局
+
+对于实时表, 可以指定如何`age-out, down-sample or compact`数据
+
+#### 2.2.4 Batch ingestion
+
+一个常见的做法是: 用户使用离线批处理生成数据, 再通过向RgS发DDL RPC来注册数据
+
+在数据注册步骤, RgS抽取表到文件的映射, 以及file headers中的二级结构.
+如果file headers中没有出现想要的索引信息, 就会让data servers来懒生成高昂代价的二级结构
+
+RgS也负责检查data和元数据中schemas的兼容性, 它会精简、合并复杂的schemas
+
+#### 2.2.5 Realtime ingestion
+
+IgS(ingestion server)是实时数据进入系统的入口
+
+IgS收到数据后, 可选得将其转化为与表结构对齐并追加写入WAL(write ahead log)中, 同时根据partition定义将数据发送到data servers, 会发送到多个data servers做冗余.
+
+数据临时存放于内存的buffer中供查询使用.
+Buffer会定期存档到文件系统以帮助恢复数据, 这里尽力而为的不会阻碍query访问数据
+
+有后台任务对wal做compact
+
+查询可以从内存Buffer中尚未持久化的部分和磁盘上的数据中读, 通过此种脏读模式查询 延迟可以到达秒甚至亚秒级, 还能保持数据一致性
+
+#### 2.2.6 Compaction
+
+compaction server会定期compact和repartition IgS写下的logs数据 成更大的分区柱状束
+
+用户可自定义基于SQL的compact逻辑, 比如过滤 聚合 淘汰老数据 保留最近数据的策略来更细粒度地控制实时数据
+
+在每个compact循环后, compaction server会通过RgS更新元数据
+
+### 2.3 Query LifeCycle
+
+
 
 ## 相关资料
 
