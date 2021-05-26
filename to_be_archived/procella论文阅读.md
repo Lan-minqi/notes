@@ -118,7 +118,41 @@ compaction server会定期compact和repartition IgS写下的logs数据 成更大
 
 ### 2.3 Query LifeCycle
 
+client连接RS(Root Server)以发出query, RS会做`query rewrites, parsing, planning and optimizations`以生成运行计划
 
+RS使用MDS(MetaData Server)的元数据信息来精简要读取的文件, 会在执行查询的过程中编排查询流程
+
+RS构建了一颗查询树, 查询块作为节点, 数据流作为边以应对复杂分布式请求计划
+
+DS(Data Server)从RS或其他DS接收plan片段, 读所需数据 -> 执行plan片段 -> 返回结果
+
+计算尽可能接近数据
+
+## 3. OPTIMIZATIONS
+
+存储和计算分离提高了可扩展性和效率, 但无处不在的RPC带来了显著的额外开销, 使用缓存以减少这部分开销
+
+## 3.1 Caching
+
+1. Colossus metadata caching(文件系统元数据缓存)  
+    为减少打开文件对name server的调用, data servers缓存了文件句柄(file handles, 保存数据块和文件服务器之间的映射)
+
+2. Header caching  
+    列式文件的首部包括一些列的元数据, data servers将他们缓存在单独的LRU cache中
+
+3. Data caching  
+    数据格式设计成内存和磁盘上表示是相同的, 使得缓存操作代价很小. 另外, DS还会缓存昂贵操作输出、布隆过滤器之类的派生信息
+
+    因为Colossus文件在close后就不可变, 所以缓存一致性只要保证文件名不被复用
+
+4. Metadata caching  
+    Procella的元数据也是分布式存储. 
+    这意味着`fetching table to file name mappings, schemas, and constraints`之类的元数据操作成为瓶颈, metadata servers使用本地LRU cache缓存这些信息
+
+5. Affinity scheduling
+    当每个server各缓存一部分数据时, 缓存会更有效果. Procella实现了亲和调度保证对同一块数据/元数据的操作很有可能落在同一个server上, 显著提高缓存命中率, 亲和性调度是尽力而为的, 让步于可用性.
+
+实际系统数据: 2%数据被缓存, file handle有99%命中率, data有90%命中率
 
 ## 相关资料
 
